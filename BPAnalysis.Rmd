@@ -1,0 +1,101 @@
+---
+title: "Analysis of Blood Pressure Readings"
+author: "Sandeep Dutta"
+date: "May 3, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(xtable)
+options(xtable.floating=FALSE)
+```
+## Synopsis
+
+The goal of this study is to study the effects of different hypertension reducing medications on the observed blood pressure readings obtained from a subject. It is intended to see which medication has the most effect on lowering blood pressure and if there is any statistically significant difference between the medication groups.
+
+## Data Collection
+
+The readings were obtained from an automatic cuff BP machine Omron model BP760N. The rreadings were obtained during various times of the day - generally in the morning after waking up, in the afternoon, in the evening and at night.
+
+At least three readings were taken at one minute intervals during each observation time and the Systolic, Diastolic pressure readings in mmHg and pulse rate in beats per minute was recorded. In addition the weight of the person was also recorded once daily right after waking up in the morning.
+
+The subject was given three different combinations of hypertension reducing medications and the subject was taking only one of the combination for a certain set of days, and then switching to the next set for the next time period(2 weeks). 
+
+```{r bp, echo=FALSE}
+## Read the raw data file in CSV format 
+temp <- read.csv("BPReadings.csv", header=T);
+bpdata<-temp[, 1:7]
+bpdata$Date<-as.Date(bpdata$Date,"%m/%d/%Y")
+#bpdata$Time<-as.POSIXct(bpdata$Time,"%I:%M %p", tz="America/New_York")
+bpdata$datetime<-paste(bpdata$Date,bpdata$Time)
+bpdata$datetime<-as.POSIXct(bpdata$datetime,"%m/%d/%Y %I:%M %p", tz="America/New_York")
+```
+## Results
+
+Here is a summary of all the readings for each medication group. The mean and standard deviation of Systolic and Diastolic BP readings are shown here grouped by each medication.
+
+```{r agg, echo=FALSE}
+ag <- aggregate(cbind(Systolic, Diastolic) ~ Medicine, bpdata, function(x) c(mean = mean(x), sd = sd(x)))
+ag
+```
+
+Next the Systolic and Diastolic measurements from every reading taken during the time period are plotted in the two graphs below. Each point plotted corresponds to a reading taken and the readings are shown such that the day is along the x-axis. The plotted points are color coded by which medication was being taken by the subject during that time period.
+
+```{r pressure, echo=FALSE, fig.height=3}
+ggplot(bpdata, aes(x=Date,y=Systolic, col=Medicine)) + 
+  geom_point(shape=16) + xlab("Date") + ylab("Systolic BP in mmHg")
+ggplot(bpdata, aes(x=Date,y=Diastolic, col=Medicine)) + 
+  geom_point(shape=17) + xlab("Date") + ylab("Diastolic BP in mmHg")
+```
+
+The next two plots shows the box plot of the Systolic and Diastolic BP readings and it is again color coded based on the medication group. The boxplot as you know gives a visual impression of the inter quartile distribution and any outliers in the readings. The box plot for the Systolic BP shows that the readings were generally lowest for the LS50AML10 group while the LM50AML05 group was slightly lower than the OM20AML05 group. The diastolic BP readings for the OM20AML05 and LM50AML05 groups were similar but a clear drop is seen with the LM50AML10 group.
+
+```{r pressure1, echo=FALSE, fig.height=3}
+ggplot(bpdata, aes(x=Date,y=Systolic, col=Medicine)) + 
+  geom_boxplot() + xlab("Date") + ylab("Systolic BP in mmHg")
+ggplot(bpdata, aes(x=Date,y=Diastolic, col=Medicine)) + 
+  geom_boxplot() + xlab("Date") + ylab("Diastolic BP in mmHg")
+```
+
+Next statistical analysis was performed to see whether the blood pressure measurements are different due to the different medications. Histogram of the Systolic and Diastolic BP readings are plotted below and it shows that the measurements can be considered to be following a normal distribution.
+
+```{r histcheck, echo=FALSE, fig.height=3}
+ggplot(bpdata, aes(x=Systolic, fill=Medicine)) + 
+  geom_histogram(binwidth=1) + xlab("Systolic BP in mmHg") + facet_grid(.~Medicine)
+ggplot(bpdata, aes(x=Diastolic, fill=Medicine)) + 
+   geom_histogram(binwidth=1) + xlab("Diastolic BP in mmHg") + facet_grid(.~Medicine)
+```
+
+As a result of the normality of the distributions, it is possible to apply One-way ANOVA analysis on the data to find if the three groups of medicines produces a difference in the readings. The NULL hypothesis considered is that the blood pressure readings are same with different medications. 
+
+NULL HYPOTHESIS:  U0=U1=U2
+
+The Alternate Hypothesis considered is that the meaurements for the different medication groups are different.
+
+The ANOVA for Systolic BP returns the following results:
+```{r hypo_test, echo=FALSE, results="asis"}
+aovS<-aov(bpdata$Systolic~bpdata$Medicine)
+aovD<-aov(bpdata$Diastolic~bpdata$Medicine)
+tab<-xtable(aovS, auto=TRUE)
+print(tab, type="html")
+```
+
+Similarly the ANOVA analysis of diastolic BP are shown below:
+
+```{r dias_hypo, echo=FALSE, results="asis"}
+tab<-xtable(aovD, auto=TRUE)
+print(tab, type="html")
+```
+
+The P-values from the ANOVA analysis show that the means of the readings under different medications are different. Now to find more information about the differences, TukeyHSD test  is performed to do a post hoc pair comparison test.
+
+```{r posthoc, echo=FALSE}
+tukS<-TukeyHSD(aovS)
+tukD<-TukeyHSD(aovD)
+tukS
+tukD
+```
+
+The results show that for Systolic BP, LS50AML05 and LS50AML10 are both different from OM20AML05 whereas for Diastolic BP, LS50AML10 is only different.
