@@ -1,14 +1,17 @@
 ---
-title: "Analysis of Blood Pressure Readings"
+title: "Analysis of Blood Pressure Measurements"
 author: "Sandeep Dutta"
-date: "May 3, 2016"
+date: "June 30, 2016"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
+options(scipen=999, digits=3)
 knitr::opts_chunk$set(echo = TRUE)
 library(ggplot2)
+library(lubridate)
 library(xtable)
+library(knitr)
 options(xtable.floating=FALSE)
 ```
 ## Synopsis
@@ -21,7 +24,7 @@ The readings were obtained from an automatic cuff BP machine Omron model BP760N.
 
 At least three readings were taken at one minute intervals during each observation time and the Systolic, Diastolic pressure readings in mmHg and pulse rate in beats per minute was recorded. In addition the weight of the person was also recorded once daily right after waking up in the morning.
 
-The subject was given three different combinations of hypertension reducing medications and the subject was taking only one of the combination for a certain set of days, and then switching to the next set for the next time period(2 weeks). 
+The subject was given five different combinations of hypertension reducing medications. The subject was on a particular medication for about 2 weeks and then switched to the next one. Finally the last medication was continued for a longer period to see whether the effect was stable.
 
 ```{r bp, echo=FALSE}
 ## Read the raw data file in CSV format 
@@ -30,63 +33,133 @@ bpdata<-temp[, 1:7]
 bpdata$Date<-as.Date(bpdata$Date,"%m/%d/%Y")
 #bpdata$Time<-as.POSIXct(bpdata$Time,"%I:%M %p", tz="America/New_York")
 bpdata$datetime<-paste(bpdata$Date,bpdata$Time)
-bpdata$datetime<-as.POSIXct(bpdata$datetime,"%m/%d/%Y %I:%M %p", tz="America/New_York")
+bpdata$datetime<-as.POSIXct(bpdata$datetime,"%Y-%m-%d %I:%M %p", tz="America/New_York")
+## Adding a variable numDay to convert dates to number of days from begin
+firstday<-bpdata$Date[1]
+bpdata$numDay<-as.numeric(bpdata$Date-firstday)
+## Encode Medicine Name as A, B, C. Create a new variable Treatment
+bpdata$Treatment<-bpdata$Medicine
+levels(bpdata$Treatment)<-sub("OM20AM05", "A", levels(bpdata$Treatment))
+levels(bpdata$Treatment)<-sub("LS50AM10HZ-2", "E", levels(bpdata$Treatment))
+levels(bpdata$Treatment)<-sub("LS50AM10HZ", "D", levels(bpdata$Treatment))
+levels(bpdata$Treatment)<-sub("LS50AM10", "C", levels(bpdata$Treatment))
+levels(bpdata$Treatment)<-sub("LS50AM05", "B", levels(bpdata$Treatment))
+bpdata$Treatment<-factor(bpdata$Treatment,levels(bpdata$Treatment)[c(5,1:4)])
+## Categorize Reading times to Morning, Afternoon, Evening and Night.
+h<-hour(bpdata$datetime)
+bpdata$Session<- ifelse(h<10,"Morning",
+                         ifelse(h<14,"Afternoon",
+                                ifelse(h<18,"Evening", "Night")
+                                )
+)
 ```
+
 ## Results
 
-Here is a summary of all the readings for each medication group. The mean and standard deviation of Systolic and Diastolic BP readings are shown here grouped by each medication.
+Here is a summary of all the readings for each medication group. The mean and standard deviation of Systolic and Diastolic BP readings are shown here grouped by each medication. The mean systolic BP value dropped from \(146\pm7.1\) for treatment A to \(126\pm7.1\) for treatment E, and correspondingly the mean diastolic BP dropped from \(97\pm5.2\) to \(82\pm4.8\).
 
-```{r agg, echo=FALSE}
-ag <- aggregate(cbind(Systolic, Diastolic) ~ Medicine, bpdata, function(x) c(mean = mean(x), sd = sd(x)))
-ag
+```{r agg, echo=FALSE, results='asis'}
+ag <- aggregate(cbind(Systolic, Diastolic) ~ Treatment, bpdata, function(x) c(mean = mean(x), sd = sd(x)))
+agt<-as.data.frame(cbind(ag$Systolic[,1], ag$Systolic[,2],                          ag$Diastolic[,1], ag$Diastolic[,2]))
+colnames(agt)<-c("Systolic Mean", "Systolic SD", "Diastolic Mean", "Diastolic SD")
+rownames(agt)<-c("A","B","C","D","E")
+kable(agt, digits=5, align="l")
 ```
 
-Next the Systolic and Diastolic measurements from every reading taken during the time period are plotted in the two graphs below. Each point plotted corresponds to a reading taken and the readings are shown such that the day is along the x-axis. The plotted points are color coded by which medication was being taken by the subject during that time period.
+Next we visualize the individual Systolic and Diastolic pressure readings as a scatter plot. Each point plotted corresponds to a reading taken and the readings are shown such that the day of the reading is along the x-axis. The plotted points are color coded by which medication was being taken by the subject during that time period.
 
-```{r pressure, echo=FALSE, fig.height=3}
-ggplot(bpdata, aes(x=Date,y=Systolic, col=Medicine)) + 
-  geom_point(shape=16) + xlab("Date") + ylab("Systolic BP in mmHg")
-ggplot(bpdata, aes(x=Date,y=Diastolic, col=Medicine)) + 
-  geom_point(shape=17) + xlab("Date") + ylab("Diastolic BP in mmHg")
+```{r sys_graph, echo=FALSE, fig.height=3, fig.cap="Fig 1: Distribution of Systolic BP readings", fig.align="center"}
+ggplot(bpdata, aes(x=numDay,y=Systolic, col=Treatment)) + 
+  geom_point(shape=16) + xlab("Days") + ylab("Systolic BP in mmHg")
+```
+```{r dia_graph, echo=FALSE, fig.height=3, fig.cap="Fig 2: Distribution of Diastolic BP readings", fig.align="center"}
+ggplot(bpdata, aes(x=numDay,y=Diastolic, col=Treatment)) + 
+  geom_point(shape=17) + xlab("Days") + ylab("Diastolic BP in mmHg")
 ```
 
-The next two plots shows the box plot of the Systolic and Diastolic BP readings and it is again color coded based on the medication group. The boxplot as you know gives a visual impression of the inter quartile distribution and any outliers in the readings. The box plot for the Systolic BP shows that the readings were generally lowest for the LS50AML10 group while the LM50AML05 group was slightly lower than the OM20AML05 group. The diastolic BP readings for the OM20AML05 and LM50AML05 groups were similar but a clear drop is seen with the LM50AML10 group.
+The next two plots shows the box plot of the Systolic and Diastolic BP readings and it is again color coded based on the medication group. The boxplot as you know gives a visual impression of the inter quartile distribution and any outliers in the readings. The box plot for the Systolic BP shows that the readings were highest for group A and progressively lower with other groups with the lowest being for the E group while the diastolic BP readings for the A and B groups were similar but a clear drop is seen with the other groups.
 
-```{r pressure1, echo=FALSE, fig.height=3}
-ggplot(bpdata, aes(x=Date,y=Systolic, col=Medicine)) + 
-  geom_boxplot() + xlab("Date") + ylab("Systolic BP in mmHg")
-ggplot(bpdata, aes(x=Date,y=Diastolic, col=Medicine)) + 
-  geom_boxplot() + xlab("Date") + ylab("Diastolic BP in mmHg")
+```{r sys_bplot, echo=FALSE, fig.height=3,fig.cap="Fig 3: Boxplot summary of Systolic BP readings", fig.align="center"}
+ggplot(bpdata, aes(x=numDay,y=Systolic, col=Treatment)) + 
+  geom_boxplot() + xlab("Days") + ylab("Systolic BP in mmHg")
+```
+```{r dia_bplot, echo=FALSE, fig.height=3,fig.cap="Fig 4: Boxplot summary of Diastolic BP readings", fig.align="center"}
+ggplot(bpdata, aes(x=numDay,y=Diastolic, col=Treatment)) + 
+  geom_boxplot() + xlab("Days") + ylab("Diastolic BP in mmHg")
 ```
 
-Next statistical analysis was performed to see whether the blood pressure measurements are different due to the different medications. Histogram of the Systolic and Diastolic BP readings are plotted below and it shows that the measurements can be considered to be following a normal distribution.
+Having observed a clear drop in the readings with newer medication treatments, analysis is next performed to see what percentage of the individual readings fall within the normal BP thresholds adopted by the medical community. Literaure and guidelines suggest a reading below 135/85 to be considered a **normal** reading. Individual readings are categorized to to be **Normal, Mild** and **High** based on whether both Systolic and Diastolic are below the threshold, one  of the two is above its threshold or both are above threshold.
 
-```{r histcheck, echo=FALSE, fig.height=3}
-ggplot(bpdata, aes(x=Systolic, fill=Medicine)) + 
-  geom_histogram(binwidth=1) + xlab("Systolic BP in mmHg") + facet_grid(.~Medicine)
-ggplot(bpdata, aes(x=Diastolic, fill=Medicine)) + 
-   geom_histogram(binwidth=1) + xlab("Diastolic BP in mmHg") + facet_grid(.~Medicine)
+```{r categorize, echo=FALSE}
+bpdata$BPStatus<-ifelse((bpdata$Systolic<135) & (bpdata$Diastolic < 85), "Normal",
+            ifelse((bpdata$Systolic>=135) & (bpdata$Diastolic >= 85), "High","Mild"))
+bptbl<-table(bpdata$BPStatus, bpdata$Treatment)
+```
+
+The frequency distribution of the readings in different categories and the percentage distribution within each treatment are shown below
+
+```{r disp_ftable, echo=FALSE}
+ftable(bptbl)
+prop.table(bptbl,2)
+```
+
+Now the distribution of the categories of the readings are looked at visually using a bar chart and pie chart that shows the progressive increase in Normal readings with Treatment. The High readings are indicated with red, Mild with yellow and the normal reading with green.
+
+```{r bp_barchart, echo=FALSE, fig.height=3, fig.cap="Fig 5: Variation in category of BP readings with treatments", fig.align="center"}
+df_bptbl<-as.data.frame(prop.table(bptbl,2))
+
+percBar<-ggplot(df_bptbl,aes(x="",y=Freq,fill=Var1))+
+      geom_bar(width = 1, stat = "identity")+ facet_grid(~Var2) +               scale_fill_manual(values=c("red", "yellow", "green")) 
+percBar + ylab("Proportion of total readings") + xlab("Treatments") + ggtitle("Change in distribution of BP categories with treatment")
+```
+```{r bp_pie, echo=FALSE, fig.height=3, fig.cap="Fig 6: Piechart showing change in BP reading category with treatments", fig.align="center"}
+pie<-percBar+coord_polar("y", start=0) + ggtitle("Distribution of BP categories for various treatments") + ylab("Treatments")
+pie
+```
+
+It is very clear from the above results and figures 5 and 6, that the percentage of Normal readings have increased significantly with treatments and the High BP readings have dropped by a huge proportion under treatment E. The Normal and Mild BP readings constitute more than **92%** of the total readings under Treatment E.
+
+```{r sys_histo, echo=FALSE, fig.height=3, fig.cap="Fig 7: Change in Systolic BP reading with Treatment", fig.align="center"}
+bpdata$SysGroup<-as.factor(ifelse(bpdata$Systolic<=130,1,ifelse(bpdata$Systolic<=150,2,3)))
+ggplot(data=bpdata, aes(Systolic, fill=SysGroup)) +   geom_histogram(breaks=seq(110,160,by=10), color="black") +     facet_grid(~Treatment) + scale_fill_manual(values=c("green", "yellow", "red"))
+```
+```{r dia_histo, echo=FALSE, fig.height=3, fig.cap="Fig 8: Change in Diastolic BP reading with Treatment", fig.align="center"}
+bpdata$DiaGroup<-as.factor(ifelse(bpdata$Diastolic<=85,1,ifelse(bpdata$Diastolic<=95,2,3)))
+ggplot(data=bpdata, aes(Diastolic, fill=DiaGroup)) +   geom_histogram(breaks=seq(65,105,by=10), color="black") +     facet_grid(~Treatment) + scale_fill_manual(values=c("green", "yellow", "red"))
+```
+
+In figures 7 and 8, the change in levels of Systolic and Diastolic BP readings are looked at individually against each treatment. In the histograms, the levels of the readings are color coded. For example, any systolic reading below 130 is indicated as green, between 130 and 150 as yellow and above 150 in red. It is clear from Fig 7. that the level of systolic readings is much lower in Treatment E compared to Treatments A and B, indicated by the disappearance of the red bars and increase in green bars. However the impact is even more drastic for Diastolic readigs as shown in Fig. 8. The high diastolic readings indicated by red bars which were prominent under A, B and C, is non-existent under E, whereas the low reading indicated by green bar is most common.
+
+## Statistical Analysis
+
+Next statistical analysis was performed to see whether the blood pressure measurements are different due to the different medications. Histograms of the Systolic and Diastolic BP readings are plotted as below to see if the the measurements can be considered to be following a normal distribution.
+
+```{r sys_norm, echo=FALSE, fig.height=3, fig.cap="Fig 9: Distribution of Systolic BP readings", fig.align="center"}
+ggplot(bpdata, aes(x=Systolic, fill=Treatment)) + 
+  geom_histogram(binwidth=1) + xlab("Systolic BP in mmHg") + facet_grid(.~Treatment)
+```
+```{r dia_norm, echo=FALSE, fig.height=3, fig.cap="Fig 10: Distribution of Diastolic BP readings", fig.align="center"}
+ggplot(bpdata, aes(x=Diastolic, fill=Treatment)) + 
+   geom_histogram(binwidth=1) + xlab("Diastolic BP in mmHg") + facet_grid(.~Treatment)
 ```
 
 As a result of the normality of the distributions, it is possible to apply One-way ANOVA analysis on the data to find if the three groups of medicines produces a difference in the readings. The NULL hypothesis considered is that the blood pressure readings are same with different medications. 
 
-NULL HYPOTHESIS:  U0=U1=U2
+**NULL HYPOTHESIS:  U0=U1=U2**
 
-The Alternate Hypothesis considered is that the meaurements for the different medication groups are different.
+The Alternate Hypothesis considered is that the measurements for the different medication groups are different.
 
 The ANOVA for Systolic BP returns the following results:
-```{r hypo_test, echo=FALSE, results="asis"}
-aovS<-aov(bpdata$Systolic~bpdata$Medicine)
-aovD<-aov(bpdata$Diastolic~bpdata$Medicine)
-tab<-xtable(aovS, auto=TRUE)
-print(tab, type="html")
+```{r hypo_test, echo=FALSE}
+aovS<-aov(bpdata$Systolic~bpdata$Treatment)
+aovD<-aov(bpdata$Diastolic~bpdata$Treatment)
+summary(aovS)
 ```
 
-Similarly the ANOVA analysis of diastolic BP are shown below:
+Similarly the ANOVA analysis of diastolic BP is shown below:
 
-```{r dias_hypo, echo=FALSE, results="asis"}
-tab<-xtable(aovD, auto=TRUE)
-print(tab, type="html")
+```{r dias_hypo, echo=FALSE}
+summary(aovD)
 ```
 
 The P-values from the ANOVA analysis show that the means of the readings under different medications are different. Now to find more information about the differences, TukeyHSD test  is performed to do a post hoc pair comparison test.
@@ -98,4 +171,40 @@ tukS
 tukD
 ```
 
-The results show that for Systolic BP, LS50AML05 and LS50AML10 are both different from OM20AML05 whereas for Diastolic BP, LS50AML10 is only different.
+The results show that for Systolic BP, all groups are different from each other at a p<0.05 level whereas for Diastolic BP, only A and B are not different.
+
+## Trends
+
+The systolic and diastolic BP readings are plotted to find if there are any trends that can be observed in the readings. It is clear that the two readings are correlated for all the medicine groups, meaning a higher value of diastolic BP always corresponds to a higher value of the systolic BP as indicated by the slope of the fitted lines. The slopes of all treatment lines are similar except for treatment B where the diastolic values were slightly higher for corresponding systolic values.
+
+```{r trendBP, echo=FALSE, fig.height=3}
+ggplot(bpdata, aes(y=Systolic, x= Diastolic, col=Treatment)) +                     geom_point(shape=17) + geom_smooth(method=lm, se=FALSE)
+```
+
+We also look at the trend in Systolic and Diastolic BP readings over the number of days in the treatment. Starting with Treatment C, we can clearly see a downward trend in the values of both Systolic and Diastolic BP as the subject spends more days in that treatment. The Diastolic BP for treatments A and B showed a trend to be higher with increasing number of days in these treatments.
+
+```{r treattrend, echo=FALSE, fig.height=3}
+ggplot(bpdata, aes(y=Systolic, x= numDay, col=Treatment)) +                        geom_point(shape=1) + geom_smooth(method=lm)
+ggplot(bpdata, aes(y=Diastolic, x= numDay, col=Treatment)) +                       geom_point(shape=2) + geom_smooth(method=lm)
+```
+
+
+Next the time of day when the readings were taken was looked at. All the times of the day when the readings were taken are plotted in the scatter plot below. It is clearly seen that the readings were taken between 7 AM and 10 PM and the reading periods can be broken into four broad chunks: 6AM-10AM, 10AM-2PM, 2PM-6PM and after 6PM. The following analysis is performed by comparing the readings between these periods in the day. 
+
+```{r timeofread, echo=FALSE, fig.height=3, fig.align="center"}
+t.lub <- ymd_hms(bpdata$datetime)
+bpdata$h.lub<-hour(t.lub) + minute(t.lub)/60
+ggplot(bpdata, aes(x=numDay, y=h.lub)) + geom_point() + ylab("Time of Reading as 24 hr clock") + xlab("Days") +ggtitle("BP Measurement times for the entire study") + scale_y_continuous(limits=c(6,24), breaks=c(6,10,14,18,22), labels=c("6 AM","10 AM", "2 PM","6 PM","10 PM"))
+```
+
+Next the mean of the BP readings for all the treatments at each period of the day are determined and tabulated below. There seems to be no pattern observed for the period of the day when the readings were taken.
+
+```{r dayperiod, echo=FALSE}
+agday <- aggregate(cbind(Systolic, Diastolic) ~ Session, bpdata, function(x) c(mean = mean(x), sd = sd(x)))
+agt<-as.data.frame(cbind(agday$Systolic[,1], agday$Systolic[,2],                          agday$Diastolic[,1], agday$Diastolic[,2]))
+colnames(agt)<-c("Systolic Mean", "Systolic SD", "Diastolic Mean", "Diastolic SD")
+rownames(agt)<-c("Afternoon","Evening","Morning","Night")
+kable(agt, digits=5, align="l")
+```
+
+
